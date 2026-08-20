@@ -39,3 +39,9 @@ next-env.d.ts
 
 # Inbox — Drop-Dateien dürfen ins Repo (Sync verschiebt sie ins Ziel)
 inbox-auto-sync/.DS_Store
+.cursor/
+.claude/
+.env
+.env.local
+node_modules/
+dist/
