@@ -5,8 +5,8 @@ import { Button, Logo } from "@/components/ui";
 import { Icon } from "@/components/ui/Icon";
 import type { TFunction } from "@/lib/i18n";
 import type { AuthUser } from "@/lib/types";
-import { initialsFromName, profileFromAuth } from "@/lib/data";
-import { signInWithPassword, signUp } from "@/lib/supabase/api";
+import { initialsFromName } from "@/lib/data";
+import { ApiError, signInWithPassword, signUp } from "@/lib/api";
 
 function Field({
   label,
@@ -62,22 +62,31 @@ export function AuthScreen({ t, onAuth }: AuthScreenProps) {
 
   async function handleAuth() {
     setError(null);
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      setError("E-Mail und Passwort sind erforderlich");
+      return;
+    }
+    if (mode === "signup" && !name.trim()) {
+      setError("Name ist erforderlich");
+      return;
+    }
     setLoading(true);
     try {
       const result =
         mode === "signin"
-          ? await signInWithPassword(email, password)
-          : await signUp(email, password, name || "Gast");
-      if (!result.ok) {
-        setError("error" in result ? result.error : "Anmeldung fehlgeschlagen");
-        return;
-      }
-      const displayName = name || profileFromAuth(email).name;
+          ? await signInWithPassword(trimmedEmail, password)
+          : await signUp(trimmedEmail, password, name.trim());
       onAuth({
-        email: email.trim().toLowerCase(),
-        name: displayName,
-        initials: initialsFromName(displayName),
+        email: result.user.email,
+        name: result.user.name,
+        initials: result.user.initials || initialsFromName(result.user.name),
+        token: result.token,
+        role: result.user.role,
       });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Anmeldung fehlgeschlagen";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -174,13 +183,16 @@ export function AuthScreen({ t, onAuth }: AuthScreenProps) {
             <div style={{ height: 1, background: "var(--line)", flex: 1 }} />
           </div>
           <div className="row gap-3">
-            <Button variant="soft" full onClick={() => onAuth({ email: "demo@volea.club", name: "Demo User", initials: "DU" })}>
+            <Button variant="soft" full disabled>
               Apple
             </Button>
-            <Button variant="soft" full onClick={() => onAuth({ email: "demo@volea.club", name: "Demo User", initials: "DU" })}>
+            <Button variant="soft" full disabled>
               Google
             </Button>
           </div>
+          <p style={{ textAlign: "center", marginTop: 10, fontSize: 12, color: "var(--ink-faint)" }}>
+            Social-Login folgt — bitte E-Mail und Passwort nutzen.
+          </p>
           <p style={{ textAlign: "center", marginTop: 26, fontSize: 14, color: "var(--ink-3)" }}>
             {mode === "signin" ? t("noAccount") : t("haveAccount")}{" "}
             <button

@@ -275,15 +275,19 @@ export const FEED: FeedItem[] = [
 ];
 
 export function occStats() {
+  return occStatsFromGrid(GRID);
+}
+
+export function occStatsFromGrid(grid: Record<number, SlotCell[]>) {
   let total = 0;
   let booked = 0;
-  COURTS.forEach((c) =>
-    GRID[c.id].forEach((s) => {
+  Object.values(grid).forEach((slots) =>
+    slots.forEach((s) => {
       total++;
       if (s.state !== "free") booked++;
     })
   );
-  return { total, booked, pct: Math.round((booked / total) * 100), free: total - booked };
+  return { total, booked, pct: total ? Math.round((booked / total) * 100) : 0, free: total - booked };
 }
 
 export function courtById(id: number) {

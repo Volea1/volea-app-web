@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { courtById, HOURS, occStats } from "@/lib/data";
+import { courtById, HOURS, occStatsFromGrid } from "@/lib/data";
+import { emptyGrid, fetchOccupancyGrid, toIsoDate } from "@/lib/api";
 import type { TFunction } from "@/lib/i18n";
 import type { Court, SlotCell, UserProfile } from "@/lib/types";
 import { addMin } from "@/lib/utils";
@@ -14,7 +15,8 @@ interface PlayerHomeProps {
   t: TFunction;
   lang: "de" | "en";
   profile: UserProfile;
-  onBook: (court: Court, slots: number[]) => void;
+  token: string;
+  onBook: (court: Court, slots: number[], date: string) => void;
   goEquip: () => void;
 }
 
@@ -27,14 +29,15 @@ function areConsecutive(slots: number[]): boolean {
   return true;
 }
 
-export function PlayerHome({ t, lang, profile, onBook, goEquip }: PlayerHomeProps) {
+export function PlayerHome({ t, lang, profile, token, onBook, goEquip }: PlayerHomeProps) {
   const [filterFree, setFilterFree] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [selectedCourtId, setSelectedCourtId] = useState<number | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<number[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [grid, setGrid] = useState<Record<number, SlotCell[]>>(() => emptyGrid());
   const gridRef = useRef<HTMLDivElement>(null);
-  const st = occStats();
+  const st = occStatsFromGrid(grid);
 
   const quotaLeft = profile.monthlyQuota - profile.monthlyUsed;
 
@@ -43,6 +46,21 @@ export function PlayerHome({ t, lang, profile, onBook, goEquip }: PlayerHomeProp
     const id = window.setTimeout(() => setToast(null), 3200);
     return () => window.clearTimeout(id);
   }, [toast]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const iso = toIsoDate(selectedDate);
+    fetchOccupancyGrid(iso, token)
+      .then((next) => {
+        if (!cancelled) setGrid(next);
+      })
+      .catch(() => {
+        if (!cancelled) setGrid(emptyGrid());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, token]);
 
   const handleDateSelect = useCallback((d: Date) => {
     setSelectedDate(d);
@@ -99,7 +117,7 @@ export function PlayerHome({ t, lang, profile, onBook, goEquip }: PlayerHomeProp
       setToast(t("quotaExceeded"));
       return;
     }
-    onBook(courtById(selectedCourtId), selectedSlots);
+    onBook(courtById(selectedCourtId), selectedSlots, toIsoDate(selectedDate));
     setSelectedCourtId(null);
     setSelectedSlots([]);
   };
@@ -172,6 +190,7 @@ export function PlayerHome({ t, lang, profile, onBook, goEquip }: PlayerHomeProp
         <OccupancyGrid
           t={t}
           lang={lang}
+          grid={grid}
           filterFree={filterFree}
           selectedCourtId={selectedCourtId}
           selectedSlots={selectedSlots}

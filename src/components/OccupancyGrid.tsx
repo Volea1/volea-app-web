@@ -1,6 +1,7 @@
 "use client";
 
-import { COURTS, GRID, HOURS, TYPE_LABEL } from "@/lib/data";
+import { COURTS, HOURS, TYPE_LABEL } from "@/lib/data";
+import { emptyGrid } from "@/lib/api";
 import type { TFunction } from "@/lib/i18n";
 import type { Court, Lang, SlotCell } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
@@ -8,6 +9,8 @@ import { Icon } from "@/components/ui/Icon";
 interface OccupancyGridProps {
   t: TFunction;
   lang: Lang;
+  courts?: Court[];
+  grid?: Record<number, SlotCell[]>;
   manage?: boolean;
   filterFree?: boolean;
   selectedCourtId?: number | null;
@@ -18,6 +21,8 @@ interface OccupancyGridProps {
 export function OccupancyGrid({
   t,
   lang,
+  courts = COURTS,
+  grid,
   manage,
   filterFree,
   selectedCourtId,
@@ -25,6 +30,7 @@ export function OccupancyGrid({
   onCell,
 }: OccupancyGridProps) {
   const cellLabel = { free: t("free"), booked: t("booked"), mine: t("mine") };
+  const occupancy = grid ?? emptyGrid(courts);
 
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
@@ -45,7 +51,7 @@ export function OccupancyGrid({
           ))}
         </div>
         <div className="col" style={{ gap: 6 }}>
-          {COURTS.map((c) => (
+          {courts.map((c) => (
             <div
               key={c.id}
               style={{
@@ -80,7 +86,7 @@ export function OccupancyGrid({
                   </div>
                 </div>
               </div>
-              {GRID[c.id].map((s, i) => {
+              {(occupancy[c.id] ?? []).map((s, i) => {
                 const dim = filterFree && s.state !== "free";
                 const clickable = s.state === "free" || !!manage;
                 const isSelected = selectedCourtId === c.id && selectedSlots.includes(i);

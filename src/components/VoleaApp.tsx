@@ -13,9 +13,19 @@ import { PlayerHome } from "@/components/player/PlayerHome";
 import { Avatar, Logo, Segmented } from "@/components/ui";
 import { Icon } from "@/components/ui/Icon";
 import type { IconName } from "@/components/ui/Icon";
-import { ADMIN_EMAIL, CLUB_FRIENDS, MY_BOOKINGS, PENDING_SHARED, courtById, initialsFromName, profileFromAuth } from "@/lib/data";
+import { ADMIN_EMAIL, CLUB_FRIENDS, PENDING_SHARED, courtById, profileFromAuth } from "@/lib/data";
 import { makeT } from "@/lib/i18n";
 import { clearSession, loadSession, saveSession } from "@/lib/session";
+import {
+  authUserFromApi,
+  cancelBooking as cancelBookingApi,
+  createBooking,
+  fetchMe,
+  fetchMyBookings,
+  profileFromApi,
+  signOut,
+  toIsoDate,
+} from "@/lib/api";
 import type {
   AccentKey,
   AdminView,
@@ -35,7 +45,6 @@ import type {
   UserProfile,
 } from "@/lib/types";
 import { ACCENTS, DENSITY, FONTS } from "@/lib/utils";
-import { getStoredSession, signOut } from "@/lib/supabase/api";
 
 export function VoleaApp() {
   const [theme, setTheme] = useState<Theme>("dark");
@@ -50,30 +59,36 @@ export function VoleaApp() {
   const [role, setRole] = useState<Role>("player");
   const [view, setView] = useState<AppView>("home");
   const [cart, setCart] = useState<Cart>({});
-  const [bookings, setBookings] = useState<Booking[]>(MY_BOOKINGS);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [sharedBookings, setSharedBookings] = useState<SharedBooking[]>(PENDING_SHARED);
-  const [sheet, setSheet] = useState<BookingSheetState>({ open: false, court: null, slots: [] });
+  const [sheet, setSheet] = useState<BookingSheetState>({
+    open: false,
+    court: null,
+    slots: [],
+    date: toIsoDate(new Date()),
+  });
+  const [remoteProfile, setRemoteProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const stored = loadSession();
-      if (stored && !cancelled) {
-        setUser(stored);
-        setAuthed(true);
-        setAuthReady(true);
+      if (!stored) {
+        if (!cancelled) setAuthReady(true);
         return;
       }
-      const remote = await getStoredSession();
-      if (remote && !cancelled) {
-        const authUser: AuthUser = {
-          email: remote.email,
-          name: remote.name,
-          initials: initialsFromName(remote.name),
-        };
+      try {
+        const me = await fetchMe(stored.token);
+        if (cancelled) return;
+        const authUser = authUserFromApi(stored.token, me);
         saveSession(authUser);
         setUser(authUser);
+        setRemoteProfile(profileFromApi(me, me.email));
         setAuthed(true);
+        const mine = await fetchMyBookings(stored.token);
+        if (!cancelled) setBookings(mine);
+      } catch {
+        clearSession();
       }
       if (!cancelled) setAuthReady(true);
     })();
@@ -85,12 +100,12 @@ export function VoleaApp() {
   const t = useMemo(() => makeT(lang), [lang]);
 
   const profile: UserProfile = useMemo(() => {
+    if (remoteProfile) return remoteProfile;
     if (!user) return profileFromAuth(ADMIN_EMAIL);
-    const base = profileFromAuth(user.email, user.name);
-    return { ...base, monthlyUsed: bookings.length };
-  }, [user, bookings.length]);
+    return profileFromAuth(user.email, user.name);
+  }, [user, remoteProfile]);
 
-  const isAdmin = user?.email.toLowerCase() === ADMIN_EMAIL;
+  const isAdmin = user?.role === "admin" || user?.email.toLowerCase() === ADMIN_EMAIL;
 
   const rootStyle = useMemo(() => {
     const acc = ACCENTS[accent];
@@ -118,8 +133,8 @@ export function VoleaApp() {
     });
   }, []);
 
-  const openBooking = useCallback((court: Court, slots: number[]) => {
-    setSheet({ open: true, court, slots });
+  const openBooking = useCallback((court: Court, slots: number[], date?: string) => {
+    setSheet({ open: true, court, slots, date: date || toIsoDate(new Date()) });
   }, []);
 
   const switchRole = useCallback((r: Role) => {
@@ -134,24 +149,48 @@ export function VoleaApp() {
     setAuthed(true);
     setRole("player");
     setView("home");
+    (async () => {
+      try {
+        const me = await fetchMe(authUser.token);
+        setRemoteProfile(profileFromApi(me, me.email));
+        const mine = await fetchMyBookings(authUser.token);
+        setBookings(mine);
+      } catch {
+        setBookings([]);
+      }
+    })();
   }, []);
 
   const handleLogout = useCallback(async () => {
-    await signOut();
+    if (user?.token) await signOut(user.token);
     clearSession();
     setAuthed(false);
     setUser(null);
+    setRemoteProfile(null);
+    setBookings([]);
     setRole("player");
     setView("home");
-  }, []);
+  }, [user]);
 
   const handleBookingComplete = useCallback(
-    (payload: BookingCompletePayload) => {
-      const id = `b${Date.now()}`;
-      const newBooking: Booking = { id, ...payload.booking };
-      setBookings((prev) => [...prev, newBooking]);
+    async (payload: BookingCompletePayload) => {
+      if (!user) throw new Error("not authenticated");
+      const created = await createBooking(user.token, {
+        court_id: payload.booking.court,
+        booking_date: payload.date,
+        slots: payload.slots,
+        players: payload.players,
+        gear: payload.gear,
+      });
+      setBookings((prev) => [...prev, created]);
+      try {
+        const me = await fetchMe(user.token);
+        setRemoteProfile(profileFromApi(me, me.email));
+      } catch {
+        /* keep existing profile */
+      }
 
-      if (payload.sharedFriendIds.length > 0 && user) {
+      if (payload.sharedFriendIds.length > 0) {
         const friends = CLUB_FRIENDS.filter((f) => payload.sharedFriendIds.includes(f.id));
         const shareCount = friends.length + 1;
         const sharePrice = payload.booking.sharePrice ?? Math.round((payload.booking.price * shareCount) / shareCount);
@@ -218,15 +257,26 @@ export function VoleaApp() {
     }
   }, [sharedBookings]);
 
-  const cancelBooking = useCallback((id: string) => {
-    setBookings((prev) => prev.filter((b) => b.id !== id));
-  }, []);
+  const cancelBooking = useCallback(
+    async (id: string) => {
+      if (!user) return;
+      await cancelBookingApi(user.token, id);
+      setBookings((prev) => prev.filter((b) => b.id !== id));
+      try {
+        const me = await fetchMe(user.token);
+        setRemoteProfile(profileFromApi(me, me.email));
+      } catch {
+        /* keep existing profile */
+      }
+    },
+    [user]
+  );
 
   const editBooking = useCallback(
     (id: string) => {
       const b = bookings.find((x) => x.id === id);
       if (b) {
-        openBooking(courtById(b.court), [b.slot]);
+        openBooking(courtById(b.court), b.slots?.length ? b.slots : [b.slot], b.date);
         setView("home");
       }
     },
@@ -267,6 +317,7 @@ export function VoleaApp() {
           t={t}
           lang={lang}
           profile={profile}
+          token={user?.token ?? ""}
           onBook={openBooking}
           goEquip={() => setView("equipment")}
         />
@@ -301,8 +352,8 @@ export function VoleaApp() {
       );
   } else {
     if (view === "overview") screen = <AdminOverview t={t} />;
-    else if (view === "bookings") screen = <AdminBookings t={t} lang={lang} />;
-    else if (view === "courts") screen = <AdminCourts t={t} lang={lang} />;
+    else if (view === "bookings") screen = <AdminBookings t={t} lang={lang} token={user?.token ?? ""} />;
+    else if (view === "courts") screen = <AdminCourts t={t} lang={lang} token={user?.token ?? ""} />;
   }
 
   const roleToggle = isAdmin ? (
@@ -430,13 +481,14 @@ export function VoleaApp() {
         open={sheet.open}
         court={sheet.court}
         slotIndices={sheet.slots}
+        bookingDate={sheet.date}
         cart={cart}
         profile={profile}
         friends={CLUB_FRIENDS}
         addGear={addGear}
         removeGear={removeGear}
         onComplete={handleBookingComplete}
-        onClose={() => setSheet({ open: false, court: null, slots: [] })}
+        onClose={() => setSheet({ open: false, court: null, slots: [], date: toIsoDate(new Date()) })}
       />
     </div>
   );

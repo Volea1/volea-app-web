@@ -2,6 +2,20 @@
 
 Alle wichtigen Änderungen an VOLEA. Neuere Versionen stehen oben.
 
+## [0.3.0] — 2026-08-20
+
+### Added
+- Auth und Buchungen über `/api` (App-API → Domain-API → Postgres)
+- Live-Belegung und Storno gegen eigene Datenbank
+
+### Changed
+- Supabase-Client entfernt; statischer nginx-Export bleibt
+- GitHub Pages Workflow entfernt (kämpft mit DNS)
+
+### Removed
+- `public/CNAME` (`volea.lauer.team`)
+- `@supabase/supabase-js`
+
 ## [0.2.0] — 2026-06-06
 
 ### Added

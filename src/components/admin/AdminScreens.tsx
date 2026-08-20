@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { COURTS, FEED, GRID, HOURS, OCC_CURVE, occStats, TYPE_LABEL, WEEK } from "@/lib/data";
+import { useEffect, useState } from "react";
+import { COURTS, FEED, HOURS, OCC_CURVE, occStats, TYPE_LABEL, WEEK } from "@/lib/data";
+import { emptyGrid, fetchOccupancyGrid, toIsoDate } from "@/lib/api";
 import type { TFunction } from "@/lib/i18n";
-import type { Lang } from "@/lib/types";
+import type { Lang, SlotCell } from "@/lib/types";
 import { Avatar, Badge, CourtDiagram, Legend, Segmented } from "@/components/ui";
 import { Icon } from "@/components/ui/Icon";
 import { OccupancyGrid } from "@/components/OccupancyGrid";
@@ -213,8 +214,24 @@ export function AdminOverview({ t }: { t: TFunction }) {
   );
 }
 
-export function AdminBookings({ t, lang }: { t: TFunction; lang: Lang }) {
+export function AdminBookings({ t, lang, token }: { t: TFunction; lang: Lang; token: string }) {
   const [free, setFree] = useState(false);
+  const [grid, setGrid] = useState<Record<number, SlotCell[]>>(() => emptyGrid());
+  const today = toIsoDate(new Date());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOccupancyGrid(today, token)
+      .then((next) => {
+        if (!cancelled) setGrid(next);
+      })
+      .catch(() => {
+        if (!cancelled) setGrid(emptyGrid());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [today, token]);
 
   return (
     <div className="view-in col gap-6" style={{ padding: "var(--page-pad)" }}>
@@ -238,14 +255,14 @@ export function AdminBookings({ t, lang }: { t: TFunction; lang: Lang }) {
       </div>
       <div className="card" style={{ padding: "20px 20px 22px" }}>
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <span style={{ fontWeight: 600 }}>Belegungsplan · Do 5. Juni</span>
+          <span style={{ fontWeight: 600 }}>Belegungsplan · {today}</span>
           <div className="row gap-4" style={{ fontSize: 12, color: "var(--ink-3)" }}>
             <Legend c="var(--free)" label={t("free")} />
             <Legend c="var(--busy)" label={t("booked")} />
             <Legend c="var(--accent)" label="Club" />
           </div>
         </div>
-        <OccupancyGrid t={t} lang={lang} manage filterFree={free} onCell={() => {}} />
+        <OccupancyGrid t={t} lang={lang} manage filterFree={free} grid={grid} onCell={() => {}} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 14, marginBottom: 0 }}>
           Klicke eine Zelle, um eine Buchung zu bearbeiten, zu blockieren oder zu stornieren.
         </p>
@@ -254,7 +271,22 @@ export function AdminBookings({ t, lang }: { t: TFunction; lang: Lang }) {
   );
 }
 
-export function AdminCourts({ t, lang }: { t: TFunction; lang: Lang }) {
+export function AdminCourts({ t, lang, token }: { t: TFunction; lang: Lang; token: string }) {
+  const [grid, setGrid] = useState<Record<number, SlotCell[]>>(() => emptyGrid());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOccupancyGrid(toIsoDate(new Date()), token)
+      .then((next) => {
+        if (!cancelled) setGrid(next);
+      })
+      .catch(() => {
+        if (!cancelled) setGrid(emptyGrid());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
   return (
     <div className="view-in col gap-6" style={{ padding: "var(--page-pad)" }}>
       <div>
@@ -267,9 +299,9 @@ export function AdminCourts({ t, lang }: { t: TFunction; lang: Lang }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 16 }}>
         {COURTS.map((c) => {
-          const slots = GRID[c.id];
+          const slots = grid[c.id] ?? [];
           const booked = slots.filter((s) => s.state !== "free").length;
-          const pct = Math.round((booked / slots.length) * 100);
+          const pct = slots.length ? Math.round((booked / slots.length) * 100) : 0;
           return (
             <div key={c.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
               <div className="row" style={{ justifyContent: "space-between" }}>

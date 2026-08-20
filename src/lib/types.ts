@@ -40,6 +40,7 @@ export interface Booking {
   court: number;
   date: string;
   slot: number;
+  slots?: number[];
   time: string;
   players: number;
   gear: string[];
@@ -110,6 +111,8 @@ export interface AuthUser {
   email: string;
   name: string;
   initials: string;
+  token: string;
+  role: Role;
 }
 
 export interface SlotSelection {
@@ -123,6 +126,7 @@ export interface BookingSheetState {
   open: boolean;
   court: Court | null;
   slots: number[];
+  date: string;
 }
 
 export type PlayerView = "home" | "equipment" | "account" | "bookings" | "friends";

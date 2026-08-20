@@ -12,6 +12,10 @@ import type { IconName } from "@/components/ui/Icon";
 export interface BookingCompletePayload {
   booking: Omit<Booking, "id">;
   sharedFriendIds: string[];
+  date: string;
+  slots: number[];
+  players: number;
+  gear: { id: string; qty: number }[];
 }
 
 interface BookingSheetProps {
@@ -20,13 +24,14 @@ interface BookingSheetProps {
   open: boolean;
   court: Court | null;
   slotIndices: number[];
+  bookingDate: string;
   cart: Cart;
   profile: UserProfile;
   friends: Friend[];
   addGear: (id: string) => void;
   removeGear: (id: string) => void;
   onClose: () => void;
-  onComplete?: (payload: BookingCompletePayload) => void;
+  onComplete?: (payload: BookingCompletePayload) => void | Promise<void>;
 }
 
 const gearIcon: Record<string, IconName> = {
@@ -109,6 +114,7 @@ export function BookingSheet({
   open,
   court,
   slotIndices,
+  bookingDate,
   cart,
   profile,
   friends,
@@ -121,12 +127,16 @@ export function BookingSheet({
   const [players, setPlayers] = useState(4);
   const [payWith, setPayWith] = useState("card");
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open && court) {
       setStep(0);
       setPlayers(court.mode === "Einzel" ? 2 : 4);
       setSelectedFriends([]);
+      setError(null);
+      setSaving(false);
     }
   }, [open, court]);
 
@@ -134,7 +144,7 @@ export function BookingSheet({
     setSelectedFriends((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function handlePay() {
+  async function handlePay() {
     if (!court) return;
     const sorted = [...slotIndices].sort((a, b) => a - b);
     const timeStart = HOURS[sorted[0]];
@@ -146,25 +156,41 @@ export function BookingSheet({
     const gearLines = Object.entries(cart)
       .filter(([, q]) => q > 0)
       .map(([id, q]) => `${q}× ${equipmentById(id)!.name}`);
+    const gearItems = Object.entries(cart)
+      .filter(([, q]) => q > 0)
+      .map(([id, q]) => ({ id, qty: q }));
     const sharedNames = friends.filter((f) => selectedFriends.includes(f.id)).map((f) => f.name);
 
-    onComplete?.({
-      booking: {
-        court: court.id,
-        date: "Heute",
-        slot: sorted[0],
-        time: timeStart,
+    setError(null);
+    setSaving(true);
+    try {
+      await onComplete?.({
+        booking: {
+          court: court.id,
+          date: bookingDate,
+          slot: sorted[0],
+          slots: sorted,
+          time: timeStart,
+          players,
+          gear: gearLines,
+          price: selectedFriends.length > 0 ? sharePrice : total,
+          status: selectedFriends.length > 0 ? t("awaitingFriends") : t("confirmed"),
+          shared: selectedFriends.length > 0,
+          sharedWith: sharedNames,
+          sharePrice: selectedFriends.length > 0 ? sharePrice : undefined,
+        },
+        sharedFriendIds: selectedFriends,
+        date: bookingDate,
+        slots: sorted,
         players,
-        gear: gearLines,
-        price: selectedFriends.length > 0 ? sharePrice : total,
-        status: selectedFriends.length > 0 ? t("awaitingFriends") : t("confirmed"),
-        shared: selectedFriends.length > 0,
-        sharedWith: sharedNames,
-        sharePrice: selectedFriends.length > 0 ? sharePrice : undefined,
-      },
-      sharedFriendIds: selectedFriends,
-    });
-    setStep(3);
+        gear: gearItems,
+      });
+      setStep(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Buchung fehlgeschlagen");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!open || !court || slotIndices.length === 0) return null;
@@ -594,9 +620,14 @@ export function BookingSheet({
               </Button>
             )}
             {step === 2 && (
-              <Button size="lg" icon="check" onClick={handlePay}>
-                {t("payNow")}
-              </Button>
+              <div className="col gap-2">
+                {error && (
+                  <p style={{ color: "var(--busy)", fontSize: 13, margin: 0 }}>{error}</p>
+                )}
+                <Button size="lg" icon="check" onClick={handlePay} disabled={saving}>
+                  {saving ? t("processing") : t("payNow")}
+                </Button>
+              </div>
             )}
           </div>
         )}

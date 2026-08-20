@@ -2,7 +2,7 @@
 
 WebApp für eine Padel-Anlage mit 10 Plätzen. Spieler können Plätze buchen, Ausrüstung leihen und die Live-Auslastung sehen. Admins verwalten Buchungen, Plätze und sehen Umsatz-Statistiken.
 
-**Live:** [volea.lauer.team](https://volea.lauer.team) · **Version:** 0.2.0
+**Live:** [volea.lauer.team](https://volea.lauer.team) · **Version:** 0.3.0
 
 ## Features
 
@@ -10,34 +10,31 @@ WebApp für eine Padel-Anlage mit 10 Plätzen. Spieler können Plätze buchen, A
 - **Admin:** Übersicht mit Charts, Buchungen verwalten, Platz-Inventar
 - **Design:** Dark/Light Theme, 4 Akzentfarben, DE/EN, responsive (Sidebar + Mobile Tab-Bar)
 - **Landingpage:** Öffentliche Startseite unter `/`, App unter `/app/`
-- **Backend:** Supabase (Auth, DB) mit Fallback auf lokale Demo-Daten
+- **Backend:** App-API (`/api/...`) → Domain-API → Postgres (`volea`)
 
 ## Tech Stack
 
 - [Next.js 15](https://nextjs.org/) (App Router, static export)
 - React 19 + TypeScript
-- [Supabase](https://supabase.com/) (Auth, Postgres, RLS)
+- nginx serves `out/` in production (see `Dockerfile`)
 - Tailwind CSS 4 + CSS Custom Properties (Design Tokens)
 
 ## Lokaler Start
 
 ```bash
 npm install
-cp .env.local.example .env.local   # Supabase-Keys eintragen (optional)
 npm run dev
 ```
 
-Dann im Browser: [http://localhost:3000](http://localhost:3000)
+`next dev` erwartet die App-API unter `/api` (nginx/Caddy oder `VOLEA_DEV_API_URL` Rewrite).
 
-Ohne `.env.local` läuft die App im Demo-Modus (Mock-Daten, Login ohne echtes Backend).
+Ohne laufende API sind Login und Buchung nicht möglich — es gibt keinen Demo-Bypass mehr.
 
 ## Deployment
 
-GitHub Actions baut bei Push auf `main` und veröffentlicht auf GitHub Pages.
+Production image: `npm run build` → static `out/` copied into nginx. `CMD npm run start` is not used.
 
-Benötigte Repository-Secrets:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+GitHub Actions (`ghcr.yml`) publishes `ghcr.io/volea1/volea-app-web:<git-sha>`.
 
 ## Projektstruktur
 
@@ -45,20 +42,12 @@ Benötigte Repository-Secrets:
 src/
   app/              # Next.js App Router (/, /app/)
   components/       # UI-Komponenten & Screens
-  lib/              # Daten, i18n, Types, Supabase-Client
-supabase/
-  migrations/       # Datenbank-Schema
+  lib/              # Daten, i18n, Types, API-Client
 ```
 
 ## Changelog
 
 Siehe [CHANGELOG.md](./CHANGELOG.md).
-
-## Roadmap
-
-- [ ] Stripe Zahlung
-- [ ] Realtime-Auslastung über Supabase
-- [ ] Buchungs-Flow vollständig an Backend anbinden
 
 ## Design
 

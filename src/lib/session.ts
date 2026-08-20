@@ -17,11 +17,13 @@ export function loadSession(): AuthUser | null {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as AuthUser;
-    if (!parsed?.email || !parsed?.name) return null;
+    if (!parsed?.email || !parsed?.name || !parsed?.token) return null;
     return {
       email: parsed.email,
       name: parsed.name,
       initials: parsed.initials || parsed.name.slice(0, 2).toUpperCase(),
+      token: parsed.token,
+      role: parsed.role === "admin" ? "admin" : "player",
     };
   } catch {
     return null;
